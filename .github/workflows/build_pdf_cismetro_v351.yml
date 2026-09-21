@@ -1,0 +1,76 @@
+name: Build PDF CISMETRO v3.5.1
+on:
+  push:
+    branches: ["build/pdf-cismetro-v3-5-1"]
+  workflow_dispatch:
+
+jobs:
+  build-windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Reconstruct source
+        shell: pwsh
+        run: |
+          $b64 = Get-Content 'pdf-cismetro-v3.5.1/source.xz.b64' -Raw
+          [IO.File]::WriteAllBytes('source.xz', [Convert]::FromBase64String($b64))
+          python -c "import lzma; open('PDF_CISMETRO_v3_5_1_CORRIGIDO.py','wb').write(lzma.decompress(open('source.xz','rb').read()))"
+      - name: Install dependencies
+        run: python -m pip install pyinstaller pypdf numpy pillow tkinterdnd2 cryptography
+      - name: Source self-test
+        run: python PDF_CISMETRO_v3_5_1_CORRIGIDO.py --self-test
+      - name: Build EXE
+        run: pyinstaller --noconfirm --clean --onefile --windowed --name PDF_CISMETRO_v3_5_1_CORRIGIDO PDF_CISMETRO_v3_5_1_CORRIGIDO.py
+      - name: EXE self-test
+        shell: pwsh
+        run: |
+          $p = Start-Process -FilePath '.\dist\PDF_CISMETRO_v3_5_1_CORRIGIDO.exe' -ArgumentList '--self-test' -PassThru -Wait
+          if ($p.ExitCode -ne 0) { throw "EXE self-test failed with exit code $($p.ExitCode)" }
+      - name: Install Inno Setup
+        run: choco install innosetup -y --no-progress
+      - name: Write installer script
+        shell: pwsh
+        run: |
+          @'
+          [Setup]
+          AppId={{E4BA3E1B-F25F-4F93-996D-96530622A351}
+          AppName=PDF CISMETRO
+          AppVersion=3.5.1
+          DefaultDirName={autopf}\PDF CISMETRO
+          DefaultGroupName=PDF CISMETRO
+          OutputDir=installer
+          OutputBaseFilename=Instalador_PDF_CISMETRO_v3_5_1_CORRIGIDO
+          Compression=lzma2
+          SolidCompression=yes
+          WizardStyle=modern
+          UninstallDisplayName=PDF CISMETRO v3.5.1
+
+          [Files]
+          Source: "dist\PDF_CISMETRO_v3_5_1_CORRIGIDO.exe"; DestDir: "{app}"; Flags: ignoreversion
+
+          [Icons]
+          Name: "{group}\PDF CISMETRO"; Filename: "{app}\PDF_CISMETRO_v3_5_1_CORRIGIDO.exe"
+          Name: "{autodesktop}\PDF CISMETRO"; Filename: "{app}\PDF_CISMETRO_v3_5_1_CORRIGIDO.exe"; Tasks: desktopicon
+
+          [Tasks]
+          Name: "desktopicon"; Description: "Criar atalho na Área de Trabalho"; GroupDescription: "Atalhos:"
+
+          [Run]
+          Filename: "{app}\PDF_CISMETRO_v3_5_1_CORRIGIDO.exe"; Description: "Abrir PDF CISMETRO"; Flags: nowait postinstall skipifsilent
+          '@ | Set-Content -Encoding UTF8 installer.iss
+      - name: Build installer
+        shell: pwsh
+        run: '& "C:\Program Files (x86)\Inno Setup 6\ISCC.exe" installer.iss'
+      - name: Collect release files
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force release | Out-Null
+          Copy-Item dist\PDF_CISMETRO_v3_5_1_CORRIGIDO.exe release\
+          Copy-Item installer\Instalador_PDF_CISMETRO_v3_5_1_CORRIGIDO.exe release\
+      - uses: actions/upload-artifact@v4
+        with:
+          name: PDF_CISMETRO_v3_5_1_CORRIGIDO_Windows
+          path: release/*
