@@ -15,7 +15,8 @@ jobs:
       - name: Reconstruct source
         shell: pwsh
         run: |
-          $b64 = Get-Content 'pdf-cismetro-v3.5.1/source.xz.b64' -Raw
+          $b64 = ''
+          1..5 | ForEach-Object { $b64 += (Get-Content "pdf-cismetro-v3.5.1/chunk$_.txt" -Raw).Trim() }
           [IO.File]::WriteAllBytes('source.xz', [Convert]::FromBase64String($b64))
           python -c "import lzma; open('PDF_CISMETRO_v3_5_1_CORRIGIDO.py','wb').write(lzma.decompress(open('source.xz','rb').read()))"
       - name: Install dependencies
